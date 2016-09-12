@@ -1,11 +1,4 @@
-/*
-  EDB.cpp
-  Extended Database Library for Arduino
-  http://www.arduino.cc/playground/Code/ExtendedDatabaseLibrary
-*/
-
-// Thanks to robtillaar (http://forum.arduino.cc/index.php/topic,130228.0.html) for the next line...
-#include "Arduino.h"
+#include <Arduino.h>
 #include "EDB.h"
 
 /**************************************************/
@@ -21,7 +14,7 @@ void EDB::edbWrite(unsigned long ee, const byte* p, unsigned int recsize)
 // low level byte read
 void EDB::edbRead(unsigned long ee, byte* p, unsigned int recsize)
 {  
-  for (unsigned i = 0; i < recsize; i++)
+  for (unsigned int i = 0; i < recsize; i++)
     *p++ = _read_byte(ee++);
 }
 
@@ -51,25 +44,30 @@ EDB_Status EDB::create(unsigned long head_ptr, unsigned long tablesize, unsigned
 {
   EDB_head_ptr = head_ptr;
   EDB_table_ptr = sizeof(EDB_Header) + EDB_head_ptr;
-  EDB_head.flag = EDB_FLAG;
   EDB_head.n_recs = 0;
   EDB_head.rec_size = recsize;
   EDB_head.table_size = tablesize;
   writeHead();
-  if (EDB_head.flag == EDB_FLAG){
-    return EDB_OK;
-  } else {
-    return EDB_ERROR;
-  }
+  return EDB_OK;
 }
 
 // reads an existing edb header at a given recno and sets header values
-EDB_Status EDB::open(unsigned long head_ptr)
+EDB_Status EDB::open(unsigned long head_ptr, unsigned long tablesize, unsigned int recsize)
 {
   EDB_head_ptr = head_ptr;
-  // Thanks to Steve Kelly for the next line... 
-  EDB_table_ptr = sizeof(EDB_Header) + EDB_head_ptr; // this line was originally missing in the downloaded library
+  EDB_table_ptr = sizeof(EDB_Header) + EDB_head_ptr;
+  EDB_head.n_recs = 0;
+  EDB_head.rec_size = recsize;
+  EDB_head.table_size = tablesize;
   readHead();
+  if (EDB_head.rec_size > recsize ||   EDB_head.table_size > tablesize)
+  {
+     // Corrupt file probably, or sizes changed
+     EDB_head.n_recs = 0;
+     EDB_head.rec_size = recsize;
+     EDB_head.table_size = tablesize;
+     return EDB_CORRUPT;
+  }
   return EDB_OK;
 }
 
@@ -83,7 +81,9 @@ EDB_Status EDB::writeRec(unsigned long recno, const EDB_Rec rec)
 // reads a record from a given recno
 EDB_Status EDB::readRec(unsigned long recno, EDB_Rec rec)
 {
-  if (recno < 1 || recno > EDB_head.n_recs) return EDB_OUT_OF_RANGE;
+  if (recno < 1 || recno > EDB_head.n_recs) {
+	return EDB_OUT_OF_RANGE;
+  }
   edbRead(EDB_table_ptr + ((recno - 1) * EDB_head.rec_size), rec, EDB_head.rec_size);
   return EDB_OK;
 }
@@ -134,35 +134,4 @@ EDB_Status EDB::updateRec(unsigned long recno, EDB_Rec rec)
   if (recno < 0 || recno > EDB_head.n_recs) return EDB_OUT_OF_RANGE;
   writeRec(recno, rec);  
   return EDB_OK;
-}
-
-// Adds a record to the end of the record set.
-// This is the fastest way to add a record.
-EDB_Status EDB::appendRec(EDB_Rec rec)
-{
-  if (EDB_head.n_recs + 1 > limit()) return EDB_TABLE_FULL;
-  EDB_head.n_recs++;
-  writeRec(EDB_head.n_recs,rec);
-  writeHead();
-  return EDB_OK;
-}
-
-// returns the number of queued items
-unsigned long EDB::count()
-{
-  return EDB_head.n_recs;
-}
-
-// returns the maximum number of items that will fit into the queue
-unsigned long EDB::limit()
-{
-   // Thanks to oleh.sok...@gmail.com for the next line
-   return (EDB_head.table_size - sizeof(EDB_Header)) / EDB_head.rec_size;
-}
-
-// truncates the queue by resetting the internal pointers
-void EDB::clear()
-{
-  readHead();
-  create(EDB_head_ptr, EDB_head.table_size, EDB_head.rec_size);
 }
